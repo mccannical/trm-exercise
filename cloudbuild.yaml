@@ -1,0 +1,54 @@
+substitutions:
+  _REGION: us-central1
+  _REPO: trm-exercise
+  _SERVICE: trm-exercise
+
+steps:
+  # Step 1: build the image, tagged with both :latest and the immutable :$SHORT_SHA
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+      - .
+
+  # Step 2: push both tags to Artifact Registry
+  - name: gcr.io/cloud-builders/docker
+    id: push-latest
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+    waitFor: [build]
+
+  - name: gcr.io/cloud-builders/docker
+    id: push-sha
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+    waitFor: [build]
+
+  # Step 3: deploy the immutable :$SHORT_SHA tag to the existing Cloud Run service.
+  # Secrets are never baked into the image -- Cloud Run pulls them from Secret
+  # Manager at runtime via --set-secrets.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --set-secrets=APP_SECRET=app-secret:latest
+    waitFor: [push-sha]
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY
