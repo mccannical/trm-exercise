@@ -1,0 +1,9 @@
+services:
+  api:
+    build: .
+    container_name: trm-ex-api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    restart: "no"
